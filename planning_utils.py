@@ -61,6 +61,10 @@ class Action(Enum):
     EAST = (0, 1, 1)
     NORTH = (-1, 0, 1)
     SOUTH = (1, 0, 1)
+    NORTH_WEST = (-1, -1, np.sqrt(2))
+    NORTH_EAST = (-1, 1, np.sqrt(2))
+    SOUTH_WEST = (1, -1, np.sqrt(2))
+    SOUTH_EAST = (1, 1, np.sqrt(2))
 
     @property
     def cost(self):
@@ -94,8 +98,7 @@ def valid_actions(grid, current_node):
     return valid_actions
 
 
-def a_star(graph, h, start, goal):
-
+def a_star_graph(graph, heuristic, start, goal):
     path = []
     queue = PriorityQueue()
     queue.put((0, start))
@@ -108,28 +111,15 @@ def a_star(graph, h, start, goal):
         item = queue.get()
         current_cost = item[0]
         current_node = item[1]
-            
-        if current_node == goal:        
+
+        if current_node == goal:
             print('Found a path.')
             found = True
             break
         else:
-            """
-            for action in valid_actions(grid, current_node):
-                # get the tuple representation
-                da = action.delta
-                next_node = (current_node[0] + da[0], current_node[1] + da[1])
-                branch_cost = current_cost + action.cost
-                queue_cost = branch_cost + h(next_node, goal)
-                
-                if next_node not in visited:                
-                    visited.add(next_node)               
-                    branch[next_node] = (branch_cost, current_node, action)
-                    queue.put((queue_cost, next_node))
-            """
             for next_node in graph[current_node]:
                 cost = graph.edges[current_node, next_node]['weight']
-                new_cost = current_cost + cost + h(next_node, goal)
+                new_cost = current_cost + cost + heuristic(next_node, goal)
 
                 if next_node not in visited:
                     visited.add(next_node)
@@ -137,6 +127,7 @@ def a_star(graph, h, start, goal):
 
                     branch[next_node] = (new_cost, current_node)
 
+    path = []
     path_cost = 0
     if found:
 
@@ -223,6 +214,27 @@ def prune_path_bresenham(grid, path):
     return pruned_path
 
 
+def prune_path_bresenham_3d(path):
+    pruned_path = [p for p in path]
+
+    i = 0
+    while i < len(pruned_path) - 2:
+
+        p1 = pruned_path[i]
+        p2 = pruned_path[i + 1]
+        p3 = pruned_path[i + 2]
+
+        hit = can_connect_bresenham_3d(p1[0], p1[1], p1[2], p3[0], p3[1], p3[2])
+
+        # If the edge does not hit on obstacle
+        # remove middle point
+        if not hit:
+            # array to tuple for future graph creation step)
+            pruned_path.remove(pruned_path[i + 1])
+
+    return pruned_path
+
+
 def attraction(position, goal, alpha):
     return alpha * (np.array(position) - np.array(goal))
 
@@ -276,7 +288,6 @@ def closest_point(graph, current_point):
     return closest_point
 
 
-# computationaly expensive
 def can_connect(n1, n2, polygons):
     l = LineString([n1, n2])
     # print('Can connect polygons: ', polygons)
@@ -284,9 +295,13 @@ def can_connect(n1, n2, polygons):
     for p in polygons:
         # if p.height >= min(n1[2], n2[2]) and p.crosses(l):
         # check x-y coords
+        """
         if min(n1[0], n2[0]) <= p.bounds[2] and max(n1[0], n2[0]) >= p.bounds[0] and min(n1[1], n2[1]) <= p.bounds[3] and max(n1[1], n2[1]) >= p.bounds[1]:
             in_range = True
         if in_range and p.height >= min(n1[2], n2[2]) and p.crosses(l):
+            return False
+        """
+        if p.crosses(l) and p.height >= min(n1[2], n2[2]):
             return False
     return True
 
@@ -392,7 +407,7 @@ def can_connect_bresenham_3d(x1, y1, z1, x2, y2, z2):
     return hit
 
 
-def create_graph(nodes, k, polygons, grid):
+def create_graph(nodes, k, polygons):
     g = nx.Graph()
     tree = KDTree(nodes)
     for n1 in nodes:

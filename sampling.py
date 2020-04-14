@@ -67,7 +67,7 @@ class Sampler:
 
         self._zmin = 0
         # limit z-axis
-        self._zmax = 5
+        self._zmax = 20
         # Record maximum polygon dimension in the xy plane
         # multiply by 2 since given sizes are half widths
         # This is still rather clunky but will allow us to 
