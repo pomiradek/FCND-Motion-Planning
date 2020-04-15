@@ -13,7 +13,6 @@ from udacidrone.frame_utils import global_to_local
 
 waypoints = []
 
-
 class States(Enum):
     MANUAL = auto()
     ARMING = auto()
@@ -45,7 +44,6 @@ class MotionPlanning(Drone):
     def local_position_callback(self):
         if self.flight_state == States.TAKEOFF:
             if -1.0 * self.local_position[2] > 0.95 * self.target_position[2]:
-                # Because of the building on spawn location
                 time.sleep(25)
                 self.waypoint_transition()
         elif self.flight_state == States.WAYPOINT:
@@ -91,8 +89,7 @@ class MotionPlanning(Drone):
         print("waypoint transition")
         self.target_position = self.waypoints.pop(0)
         print('target position', self.target_position)
-        self.cmd_position(self.target_position[0], self.target_position[1], self.target_position[2],
-                          self.target_position[3])
+        self.cmd_position(self.target_position[0], self.target_position[1], self.target_position[2], self.target_position[3])
 
     def landing_transition(self):
         self.flight_state = States.LANDING
@@ -130,30 +127,29 @@ class MotionPlanning(Drone):
             origin_pos_data = f.readline().split(',')
         lat0 = float(origin_pos_data[0].strip().split(' ')[1])
         lon0 = float(origin_pos_data[1].strip().split(' ')[1])
-
+        
         # set home position to (lon0, lat0, 0)
         self.set_home_position(lon0, lat0, 0)
 
         # retrieve current global position
         current_global_position = [self._longitude, self._latitude, self._altitude]
-
+ 
         # convert to current local position using global_to_local()
         current_local_position = global_to_local(current_global_position, self.global_home)
-
+        
         print('global home {0}, position {1}, local position {2}'.format(self.global_home, self.global_position,
                                                                          self.local_position))
         # Read in obstacle map
         data = np.loadtxt('colliders.csv', delimiter=',', dtype='Float64', skiprows=2)
-
+        
         # Define a grid for a particular altitude and safety margin around obstacles
         grid, north_offset, east_offset = create_grid(data, TARGET_ALTITUDE, SAFETY_DISTANCE)
         print("North offset = {0}, east offset = {1}".format(north_offset, east_offset))
         # Define starting point on the grid (this is just grid center)
         grid_start = (-north_offset, -east_offset)
         # TODO: convert start position to current position rather than map center
-        grid_start = (
-        int(np.round(current_local_position[0])) - north_offset, int(np.round(current_local_position[1])) - east_offset)
-
+        grid_start = (int(np.round(current_local_position[0])) - north_offset, int(np.round(current_local_position[1])) - east_offset)
+        
         # Set goal as some arbitrary position on the grid
         grid_goal = (-north_offset + 10, -east_offset + 10)
         # TODO: adapt to set goal as latitude / longitude position and convert
@@ -169,12 +165,24 @@ class MotionPlanning(Drone):
         goal_local = global_to_local(goal_global, self.global_home)
         grid_goal = (int(np.round(goal_local[0])) - north_offset, int(np.round(goal_local[1])) - east_offset)
 
+        # Run A* to find a path from start to goal
+        # add diagonal motions with a cost of sqrt(2) to your A* implementation
+        # or move to a different search space such as a graph (not done here)
         print('Local Start and Goal: ', grid_start, grid_goal)
+        path, _ = a_star(grid, heuristic_grid, grid_start, grid_goal)
+
+        # prune path to minimize number of waypoints
+        print('prunning path', path)
+        pruned_path = prune_path(path)
+        print('prunned path', pruned_path)
+
+        # Convert path to waypoints
+        waypoints = [[p[0] + north_offset, p[1] + east_offset, 5, 0] for p in pruned_path]
+        print(waypoints)
 
         # Set self.waypoints
         self.waypoints = waypoints
-        print(self.waypoints)
-        # TODO: send waypoints to sim (this is just for visualization of waypoints)
+        # send waypoints to sim (this is just for visualization of waypoints)
         self.send_waypoints()
 
     def start(self):
@@ -196,47 +204,7 @@ if __name__ == "__main__":
     parser.add_argument('--host', type=str, default='127.0.0.1', help="host address, i.e. '127.0.0.1'")
     args = parser.parse_args()
 
-    grid_start = (316, 445)
-    grid_goal = (513, 288)
-
-    # Read in obstacle map
-    data = np.loadtxt('colliders.csv', delimiter=',', dtype='Float64', skiprows=2)
-
-    # Define a grid for a particular altitude and safety margin around obstacles
-    grid, north_offset, east_offset = create_grid(data, 5, 5)
-
-    # Run A* to find a path from start to goal
-    # TODO: add diagonal motions with a cost of sqrt(2) to your A* implementation
-    # or move to a different search space such as a graph (not done here)
-    print('Local Start and Goal: ', grid_start, grid_goal)
-    path, _ = a_star(grid, heuristic_grid, grid_start, grid_goal)
-    # TODO: prune path to minimize number of waypoints
-    # TODO (if you're feeling ambitious): Try a different approach altogether!
-    print('prunning path', path)
-    pruned_path = prune_path(path)
-    print('prunned path', pruned_path)
-
-    # Convert path to waypoints
-    waypoints = [[p[0] + north_offset, p[1] + east_offset, 5, 0] for p in pruned_path]
-    print(waypoints)
-
-    import matplotlib.pyplot as plt
-
-    plt.imshow(grid, origin='lower', cmap='Greys')
-
-    for i in range(len(pruned_path) - 1):
-        p1 = pruned_path[i]
-        p2 = pruned_path[i + 1]
-        plt.plot([p1[1], p2[1]], [p1[0], p2[0]], 'r-')
-
-    plt.plot(grid_start[1], grid_start[0], 'gx')
-    plt.plot(grid_goal[1], grid_goal[0], 'gx')
-
-    plt.xlabel('EAST', fontsize=20)
-    plt.ylabel('NORTH', fontsize=20)
-    plt.show()
-
-    conn = MavlinkConnection('tcp:{0}:{1}'.format(args.host, args.port), timeout=60)
+    conn = MavlinkConnection('tcp:{0}:{1}'.format(args.host, args.port), timeout=6000000)
     drone = MotionPlanning(conn)
     time.sleep(1)
 

@@ -39,26 +39,21 @@ This is script file uses principles of event driven programming.
 `planning_utils.py` contains utilities for
  1. creating a grid map
  2. defines valid actions fro drone to take
- 3. implementation of A* star algorithm (grid implementation) with its heuristic function
- 4. create_grid function for grid map in desired altitude
- 5. prune_path function which uses collinearity check to prune the path
+ 3. implementation of A* star algorithm (graph implementation) with its heuristic function
+ 4. create_graph function for generating 3D graph using Probabilistic Roadmap approach with KDTrees implementation (http://scikit-learn.org/stable/modules/generated/sklearn.neighbors.KDTree.html)
+ 5. can_connect function which uses LineString to check if the line is crossing any building (polygon) from shapely.geometry library http://shapely.readthedocs.io/en/stable/manual.html
 
-And here's a lovely image of the drone executing the computed navigation path.
-![Top Down View](./misc/executing_path.png)
+And here's a lovely image of my results (ok this image has nothing to do with it, but it's a nice example of how to include images in your writeup!)
+![Top Down View](./misc/high_up.png)
 
 ### Implementing Your Path Planning Algorithm
 
 #### 1. Set your global home position
 I have read the first line of the csv file, extract lat0 and lon0 as floating point values and use the self.set_home_position() method to set global home.
-For reading the coordinates I am using splitting strings to parse the first line of the csv file
+For readding the coordinates I am using regular expression to parse the first line of the csv file
 ```python
-filename = 'colliders.csv'
-with open(filename) as f:
-    origin_pos_data = f.readline().split(',')
-lat0 = float(origin_pos_data[0].strip().split(' ')[1])
-lon0 = float(origin_pos_data[1].strip().split(' ')[1])
-
-self.set_home_position(lon0, lat0, 0)
+home = re.findall(r"[-+]?\d*\.*\d+", f.readline())
+self.set_home_position(float(home[3]), float(home[1]), 0.0)
 ```
 
 And here is a lovely picture of our downtown San Francisco environment from above!
@@ -70,62 +65,32 @@ Here as long as you successfully determine your local position relative to globa
 To set current position I firstly need to get a global position of the drone. Then I have to convert this global position to local position.
 
 ```python
- # retrieve current global position
-current_global_position = [self._longitude, self._latitude, self._altitude]
-
+# retrieve current global position
+global_position = [self._longitude, self._latitude, self._altitude]
 # convert to current local position using global_to_local()
-current_local_position = global_to_local(current_global_position, self.global_home)
+local_position = global_to_local(global_position, self.global_home)
 ```
 
 #### 3. Set grid start position from local position
-To convert to grid positions we first need to obtain north_offset, east_offset from create_grid function. Then we set the start position as follows
-```python
-grid_start = (int(np.round(current_local_position[0])) - north_offset, int(np.round(current_local_position[1])) - east_offset)
-```
+This is another step in adding flexibility to the start location. As long as it works you're good to go!
 
 #### 4. Set grid goal position from geodetic coords
 This step is to add flexibility to the desired goal location. Should be able to choose any (lat, lon) within the map and have it rendered to a goal location on the grid.
 
-To generate grid goal from geodetic coords I am using this line of code:
-```python
-goal_lon = -122.399219
-goal_lat = 37.794262
-goal_global = (goal_lon, goal_lat, 0)
-goal_local = global_to_local(goal_global, self.global_home)
-grid_goal = (int(np.round(goal_local[0])) - north_offset, int(np.round(goal_local[1])) - east_offset)
-```
-
 #### 5. Modify A* to include diagonal motion (or replace A* altogether)
 Minimal requirement here is to modify the code in planning_utils() to update the A* implementation to include diagonal motions on the grid that have a cost of sqrt(2), but more creative solutions are welcome. Explain the code you used to accomplish this step.
 
-I have to add more allowed actions:
-```python
-NORTH_WEST = (-1, -1, np.sqrt(2))
-NORTH_EAST = (-1, 1, np.sqrt(2))
-SOUTH_WEST = (1, -1, np.sqrt(2))
-SOUTH_EAST = (1, 1, np.sqrt(2))
-```
-
-And for each of them add a check if it this action will not end up outside the map:
-```python
-if x - 1 < 0 or y - 1 < 0 or grid[x - 1, y - 1] == 1:
-    valid_actions.remove(Action.NORTH_WEST)
-if x - 1 < 0 or y + 1 > m or grid[x - 1, y + 1] == 1:
-    valid_actions.remove(Action.NORTH_EAST)
-if x + 1 > n or y - 1 < 0 or grid[x + 1, y - 1] == 1:
-    valid_actions.remove(Action.SOUTH_WEST)
-if x + 1 > n or y + 1 > m or grid[x + 1, y + 1] == 1:
-    valid_actions.remove(Action.SOUTH_EAST)
-```
-
 #### 6. Cull waypoints 
-Final step was to prune the computed path from A* search to make the plan a flight of the drone more smoothly. To prune the path I am using collinearity test.
-```python
-m = np.concatenate((p1, p2, p3), 0)
-det = np.linalg.det(m)
-return abs(det) < epsilon 
-```
+For this step you can use a collinearity test or ray tracing method like Bresenham. The idea is simply to prune your path of unnecessary waypoints. Explain the code you used to accomplish this step.
+
+
 
 ### Execute the flight
 #### 1. Does it work?
-The drone is following the path. But there is some space for improvement, like more clever bounds to make the drone move more smoothly.
+It works!
+
+### Double check that you've met specifications for each of the [rubric](https://review.udacity.com/#!/rubrics/1534/view) points.
+  
+# Extra Challenges: Real World Planning
+
+For an extra challenge, consider implementing some of the techniques described in the "Real World Planning" lesson. You could try implementing a vehicle model to take dynamic constraints into account, or implement a replanning method to invoke if you get off course or encounter unexpected obstacles.
